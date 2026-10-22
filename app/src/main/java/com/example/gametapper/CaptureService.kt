@@ -54,7 +54,9 @@ class CaptureService : Service() {
         val m = getSystemService(MediaProjectionManager::class.java)
         proj = m.getMediaProjection(i.getIntExtra("code", Activity.RESULT_OK), data)
         proj!!.registerCallback(object : MediaProjection.Callback() { override fun onStop() { stopSelf() } }, h)
-        val dm = resources.displayMetrics
+        val dm = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(dm)
         val w = dm.widthPixels; val hh = dm.heightPixels
         reader = ImageReader.newInstance(w, hh, PixelFormat.RGBA_8888, 2)
         vd = proj!!.createVirtualDisplay("cap", w, hh, dm.densityDpi,
