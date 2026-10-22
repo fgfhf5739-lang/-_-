@@ -89,14 +89,20 @@ class CaptureService : Service() {
         val now = SystemClock.elapsedRealtime()
         val dbg = StringBuilder(if (ClickService.instance == null) "TRỢ NĂNG TẮT! " else "TN ok ")
         var hit: Step? = null
+        val offs = floatArrayOf(-6f, -4.5f, -3f, -1.5f, 0f, 1.5f, 3f, 4.5f, 6f)
+        var hitX = 0f; var hitY = 0f
         for (s in steps) {
-            val l = (s.l * k).toInt().coerceIn(0, bm.width - 2)
-            val t = (oy + s.t * k).toInt().coerceIn(0, bm.height - 2)
-            val w = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l)
-            val hh = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t)
-            val sc = ncc(sig(Bitmap.createBitmap(bm, l, t, w, hh)), s.sig)
-            dbg.append(s.name.take(3)).append('=').append((sc * 100).toInt()).append(' ')
-            if (hit == null && sc > THRESH && now - (last[s.name] ?: 0L) >= s.cooldown) hit = s
+            var best = -1f; var bx = 0f; var by = 0f
+            for (dy in offs) for (dx in offs) {
+                val l = ((s.l + dx) * k).toInt().coerceIn(0, bm.width - 2)
+                val t = (oy + (s.t + dy) * k).toInt().coerceIn(0, bm.height - 2)
+                val w = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l)
+                val hh = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t)
+                val sc = ncc(sig(Bitmap.createBitmap(bm, l, t, w, hh)), s.sig)
+                if (sc > best) { best = sc; bx = dx; by = dy }
+            }
+            dbg.append(s.name.take(3)).append('=').append((best * 100).toInt()).append(' ')
+            if (hit == null && best > THRESH && now - (last[s.name] ?: 0L) >= s.cooldown) { hit = s; hitX = bx; hitY = by }
         }
         getSystemService(NotificationManager::class.java).notify(1,
             Notification.Builder(this, "cap").setContentTitle("GameTapper (cần > ${(THRESH * 100).toInt()})")
@@ -104,7 +110,7 @@ class CaptureService : Service() {
                 .setSmallIcon(android.R.drawable.ic_menu_view).build())
         hit?.let {
             last[it.name] = now
-            ClickService.instance?.tap(it.tx * k, oy + it.ty * k)
+            ClickService.instance?.tap((it.tx + hitX) * k, oy + (it.ty + hitY) * k)
         }
     }
 
