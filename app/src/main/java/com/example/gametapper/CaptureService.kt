@@ -19,7 +19,7 @@ class Step(val name: String, val l: Int, val t: Int, val r: Int, val b: Int,
 class CaptureService : Service() {
     // Toạ độ theo khung game 360x640 (game full chiều ngang, căn giữa dọc)
     private val RW = 360f; private val RH = 640f
-    private val N = 24; private val THRESH = 22f
+    private val N = 24; private val THRESH = 0.8f
     private val steps = listOf(
         Step("announce", 115, 96, 245, 118, 308, 131, 3000),
         Step("login", 95, 468, 262, 492, 190, 520, 6000),
@@ -85,36 +85,33 @@ class CaptureService : Service() {
         } finally { img.close() }
         val k = bm.width / RW; val oy = (bm.height - RH * k) / 2f
         val now = SystemClock.elapsedRealtime()
-        val dbg = StringBuilder()
-        dbg.append(if (ClickService.instance == null) "TRỢ NĂNG TẮT! " else "TN ok ")
+        val dbg = StringBuilder(if (ClickService.instance == null) "TRỢ NĂNG TẮT! " else "TN ok ")
+        var hit: Step? = null
         for (s in steps) {
-            val l0 = (s.l * k).toInt().coerceIn(0, bm.width - 2)
-            val t0 = (oy + s.t * k).toInt().coerceIn(0, bm.height - 2)
-            val w0 = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l0)
-            val h0 = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t0)
-            val c0 = sig(Bitmap.createBitmap(bm, l0, t0, w0, h0))
-            var d0 = 0f; for (i in c0.indices) d0 += abs(c0[i] - s.sig[i])
-            dbg.append(s.name.take(3)).append('=').append((d0 / c0.size).toInt()).append(' ')
-        }
-        dbg.append(" px=").append(Color.red(bm.getPixel(bm.width / 2, bm.height / 2)))
-        getSystemService(NotificationManager::class.java).notify(1,
-            Notification.Builder(this, "cap").setContentTitle("GameTapper (ngưỡng $THRESH)")
-                .setContentText(dbg.toString()).setStyle(Notification.BigTextStyle().bigText(dbg.toString()))
-                .setSmallIcon(android.R.drawable.ic_menu_view).build())
-        for (s in steps) {
-            if (now - (last[s.name] ?: 0L) < s.cooldown) continue
             val l = (s.l * k).toInt().coerceIn(0, bm.width - 2)
             val t = (oy + s.t * k).toInt().coerceIn(0, bm.height - 2)
             val w = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l)
             val hh = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t)
-            val cur = sig(Bitmap.createBitmap(bm, l, t, w, hh))
-            var d = 0f; for (i in cur.indices) d += abs(cur[i] - s.sig[i])
-            if (d / cur.size < THRESH) {
-                last[s.name] = now
-                ClickService.instance?.tap(s.tx * k, oy + s.ty * k)
-                break
-            }
+            val sc = ncc(sig(Bitmap.createBitmap(bm, l, t, w, hh)), s.sig)
+            dbg.append(s.name.take(3)).append('=').append((sc * 100).toInt()).append(' ')
+            if (hit == null && sc > THRESH && now - (last[s.name] ?: 0L) >= s.cooldown) hit = s
         }
+        getSystemService(NotificationManager::class.java).notify(1,
+            Notification.Builder(this, "cap").setContentTitle("GameTapper (cần > ${(THRESH * 100).toInt()})")
+                .setContentText(dbg.toString()).setStyle(Notification.BigTextStyle().bigText(dbg.toString()))
+                .setSmallIcon(android.R.drawable.ic_menu_view).build())
+        hit?.let {
+            last[it.name] = now
+            ClickService.instance?.tap(it.tx * k, oy + it.ty * k)
+        }
+    }
+
+    /** Tương quan chuẩn hoá: không phụ thuộc độ sáng (bảng bị làm mờ vẫn khớp). */
+    private fun ncc(a: FloatArray, b: FloatArray): Float {
+        val ma = a.average().toFloat(); val mb = b.average().toFloat()
+        var ab = 0f; var aa = 0f; var bb = 0f
+        for (i in a.indices) { val x = a[i] - ma; val y = b[i] - mb; ab += x * y; aa += x * x; bb += y * y }
+        return ab / (Math.sqrt((aa * bb).toDouble()).toFloat() + 1e-6f)
     }
 
     override fun onDestroy() {
