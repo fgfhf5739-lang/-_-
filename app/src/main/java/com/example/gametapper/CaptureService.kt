@@ -85,6 +85,22 @@ class CaptureService : Service() {
         } finally { img.close() }
         val k = bm.width / RW; val oy = (bm.height - RH * k) / 2f
         val now = SystemClock.elapsedRealtime()
+        val dbg = StringBuilder()
+        dbg.append(if (ClickService.instance == null) "TRỢ NĂNG TẮT! " else "TN ok ")
+        for (s in steps) {
+            val l0 = (s.l * k).toInt().coerceIn(0, bm.width - 2)
+            val t0 = (oy + s.t * k).toInt().coerceIn(0, bm.height - 2)
+            val w0 = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l0)
+            val h0 = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t0)
+            val c0 = sig(Bitmap.createBitmap(bm, l0, t0, w0, h0))
+            var d0 = 0f; for (i in c0.indices) d0 += abs(c0[i] - s.sig[i])
+            dbg.append(s.name.take(3)).append('=').append((d0 / c0.size).toInt()).append(' ')
+        }
+        dbg.append(" px=").append(Color.red(bm.getPixel(bm.width / 2, bm.height / 2)))
+        getSystemService(NotificationManager::class.java).notify(1,
+            Notification.Builder(this, "cap").setContentTitle("GameTapper (ngưỡng $THRESH)")
+                .setContentText(dbg.toString()).setStyle(Notification.BigTextStyle().bigText(dbg.toString()))
+                .setSmallIcon(android.R.drawable.ic_menu_view).build())
         for (s in steps) {
             if (now - (last[s.name] ?: 0L) < s.cooldown) continue
             val l = (s.l * k).toInt().coerceIn(0, bm.width - 2)
