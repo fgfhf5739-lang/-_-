@@ -14,7 +14,7 @@ import kotlin.math.abs
 
 /** Vùng mẫu cắt từ màn hình gốc 360x640; (tx,ty) là điểm chạm. */
 class Step(val name: String, val l: Int, val t: Int, val r: Int, val b: Int,
-           val tx: Int, val ty: Int, val cooldown: Long, val search: Boolean = false) { var sig = FloatArray(0) }
+           val tx: Int, val ty: Int, val cooldown: Long) { var sig = FloatArray(0) }
 
 class CaptureService : Service() {
     // Toạ độ theo khung game 360x640 (game full chiều ngang, căn giữa dọc)
@@ -25,7 +25,7 @@ class CaptureService : Service() {
         Step("login", 95, 468, 262, 492, 190, 520, 6000),
         Step("pickup", 110, 216, 212, 238, 340, 180, 2500),
         Step("auto", 140, 98, 218, 120, 194, 478, 3000),
-        Step("main", 232, 548, 262, 585, 246, 568, 60000, true)
+        Step("main", 232, 548, 262, 585, 246, 568, 60000)
     )
     private val last = HashMap<String, Long>()
     private val h = Handler(Looper.getMainLooper())
@@ -33,7 +33,6 @@ class CaptureService : Service() {
     private var vd: VirtualDisplay? = null
     private var reader: ImageReader? = null
     private var on = false
-    private var cx = 0f; private var cy = 0f; private var cyc = 0
 
     private fun sig(bm: Bitmap): FloatArray {
         val s = Bitmap.createScaledBitmap(bm, N, N, true)
@@ -72,7 +71,7 @@ class CaptureService : Service() {
         override fun run() {
             if (!on) return
             try { check() } catch (e: Exception) {}
-            h.postDelayed(this, 500)
+            h.postDelayed(this, 1500)
         }
     }
 
@@ -84,51 +83,35 @@ class CaptureService : Service() {
             val rowPx = pl.rowStride / pl.pixelStride
             val tmp = Bitmap.createBitmap(rowPx, img.height, Bitmap.Config.ARGB_8888)
             tmp.copyPixelsFromBuffer(pl.buffer)
-            bm = tmp
+            bm = Bitmap.createBitmap(tmp, 0, 0, img.width, img.height)
         } finally { img.close() }
         val k = bm.width / RW; val oy = (bm.height - RH * k) / 2f
         val now = SystemClock.elapsedRealtime()
         val dbg = StringBuilder(if (ClickService.instance == null) "TRỢ NĂNG TẮT! " else "TN ok ")
         var hit: Step? = null
-        cyc++
         val offs = floatArrayOf(-6f, -4.5f, -3f, -1.5f, 0f, 1.5f, 3f, 4.5f, 6f)
         var hitX = 0f; var hitY = 0f
-        fun score(s: Step, dx: Float, dy: Float): Float {
-            val l = ((s.l + dx) * k).toInt().coerceIn(0, bm.width - 2)
-            val t = (oy + (s.t + dy) * k).toInt().coerceIn(0, bm.height - 2)
-            val w = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l)
-            val hh = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t)
-            return ncc(sig(Bitmap.createBitmap(bm, l, t, w, hh)), s.sig)
-        }
         for (s in steps) {
-            var best = score(s, 0f, 0f); var bx = 0f; var by = 0f
-            val ready = now - (last[s.name] ?: 0L) >= s.cooldown
-            // chỉ dò lệch khi chưa khớp, và chỉ với bước cần dò (nút nhỏ)
-            if (s.search && ready && best <= THRESH) {
-                // thử ngay vị trí lệch đã nhớ (nhanh), chỉ dò đầy đủ mỗi 4 vòng
-                val c = score(s, cx, cy)
-                if (c > best) { best = c; bx = cx; by = cy }
-                if (best <= THRESH && cyc % 4 == 0) {
-                    search@ for (dy in offs) for (dx in offs) {
-                        val sc = score(s, dx, dy)
-                        if (sc > best) { best = sc; bx = dx; by = dy }
-                        if (best > THRESH) break@search
-                    }
-                }
-                if (best > THRESH) { cx = bx; cy = by }
+            var best = -1f; var bx = 0f; var by = 0f
+            for (dy in offs) for (dx in offs) {
+                val l = ((s.l + dx) * k).toInt().coerceIn(0, bm.width - 2)
+                val t = (oy + (s.t + dy) * k).toInt().coerceIn(0, bm.height - 2)
+                val w = ((s.r - s.l) * k).toInt().coerceIn(1, bm.width - l)
+                val hh = ((s.b - s.t) * k).toInt().coerceIn(1, bm.height - t)
+                val sc = ncc(sig(Bitmap.createBitmap(bm, l, t, w, hh)), s.sig)
+                if (sc > best) { best = sc; bx = dx; by = dy }
             }
             dbg.append(s.name.take(3)).append('=').append((best * 100).toInt()).append(' ')
-            if (hit == null && best > THRESH && ready) { hit = s; hitX = bx; hitY = by }
-        }
-        // tap ngay, rồi mới cập nhật thông báo
-        hit?.let {
-            last[it.name] = now
-            ClickService.instance?.tap((it.tx + hitX) * k, oy + (it.ty + hitY) * k)
+            if (hit == null && best > THRESH && now - (last[s.name] ?: 0L) >= s.cooldown) { hit = s; hitX = bx; hitY = by }
         }
         getSystemService(NotificationManager::class.java).notify(1,
             Notification.Builder(this, "cap").setContentTitle("GameTapper (cần > ${(THRESH * 100).toInt()})")
                 .setContentText(dbg.toString()).setStyle(Notification.BigTextStyle().bigText(dbg.toString()))
                 .setSmallIcon(android.R.drawable.ic_menu_view).build())
+        hit?.let {
+            last[it.name] = now
+            ClickService.instance?.tap((it.tx + hitX) * k, oy + (it.ty + hitY) * k)
+        }
     }
 
     /** Tương quan chuẩn hoá: không phụ thuộc độ sáng (bảng bị làm mờ vẫn khớp). */
