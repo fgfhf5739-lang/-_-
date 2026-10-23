@@ -21,6 +21,7 @@ class CaptureService : Service() {
     private val RW = 360f; private val RH = 640f
     private val N = 24; private val THRESH = 0.8f
     private val steps = listOf(
+        Step("net", 50, 292, 310, 318, 180, 377, 3000),
         Step("announce", 115, 96, 245, 118, 308, 131, 3000),
         Step("login", 95, 468, 262, 492, 190, 520, 6000),
         Step("pickup", 110, 216, 212, 238, 340, 180, 2500),
