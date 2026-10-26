@@ -14,13 +14,17 @@ import kotlin.math.abs
 
 /** Vùng mẫu cắt từ màn hình gốc 360x640; (tx,ty) là điểm chạm. */
 class Step(val name: String, val l: Int, val t: Int, val r: Int, val b: Int,
-           val tx: Int, val ty: Int, val cooldown: Long) { var sig = FloatArray(0) }
+           val tx: Int, val ty: Int, val cooldown: Long,
+           val color: Int = 0,            // 0: không xét màu, 1: số phải màu đỏ (-), 2: màu xanh (+)
+           val asset: String = name) { var sig = FloatArray(0) }
 
 class CaptureService : Service() {
     // Toạ độ theo khung game 360x640 (game full chiều ngang, căn giữa dọc)
     private val RW = 360f; private val RH = 640f
     private val N = 24; private val THRESH = 0.8f
     private val steps = listOf(
+        Step("replace", 209, 371, 239, 386, 268, 528, 2000, 2, "yaoli"),  // 妖力 + xanh -> 替换
+        Step("decomp", 209, 371, 239, 386, 88, 528, 2000, 1, "yaoli"),    // 妖力 - đỏ  -> 分解
         Step("close", 118, 347, 242, 362, 310, 32, 2000),
         Step("notip", 131, 572, 186, 590, 330, 22, 3000),
         Step("net", 146, 227, 213, 243, 180, 377, 3000),
@@ -64,7 +68,7 @@ class CaptureService : Service() {
         reader = ImageReader.newInstance(w, hh, PixelFormat.RGBA_8888, 2)
         vd = proj!!.createVirtualDisplay("cap", w, hh, dm.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader!!.surface, null, h)
-        for (s in steps) s.sig = sig(BitmapFactory.decodeStream(assets.open(s.name + ".png")))
+        for (s in steps) s.sig = sig(BitmapFactory.decodeStream(assets.open(s.asset + ".png")))
         on = true
         h.postDelayed(loop, 2000)
         return START_NOT_STICKY
@@ -105,7 +109,7 @@ class CaptureService : Service() {
                 if (sc > best) { best = sc; bx = dx; by = dy }
             }
             dbg.append(s.name.take(3)).append('=').append((best * 100).toInt()).append(' ')
-            if (hit == null && best > THRESH && now - (last[s.name] ?: 0L) >= s.cooldown) { hit = s; hitX = bx; hitY = by }
+            if (hit == null && best > THRESH && now - (last[s.name] ?: 0L) >= s.cooldown && colorOk(bm, s, k, oy)) { hit = s; hitX = bx; hitY = by }
         }
         getSystemService(NotificationManager::class.java).notify(1,
             Notification.Builder(this, "cap").setContentTitle("GameTapper (cần > ${(THRESH * 100).toInt()})")
@@ -123,6 +127,24 @@ class CaptureService : Service() {
         var ab = 0f; var aa = 0f; var bb = 0f
         for (i in a.indices) { val x = a[i] - ma; val y = b[i] - mb; ab += x * y; aa += x * x; bb += y * y }
         return ab / (Math.sqrt((aa * bb).toDouble()).toFloat() + 1e-6f)
+    }
+
+    /** Kiểm tra màu số 妖力: đỏ (dấu -) hoặc xanh (dấu +), vùng cố định (242,371)-(322,386). */
+    private fun colorOk(bm: Bitmap, s: Step, k: Float, oy: Float): Boolean {
+        if (s.color == 0) return true
+        val l = (242 * k).toInt().coerceIn(0, bm.width - 2)
+        val t = (oy + 371 * k).toInt().coerceIn(0, bm.height - 2)
+        val w = (80 * k).toInt().coerceIn(1, bm.width - l)
+        val hh = (15 * k).toInt().coerceIn(1, bm.height - t)
+        val px = IntArray(w * hh); bm.getPixels(px, 0, w, l, t, w, hh)
+        var red = 0; var grn = 0
+        for (c in px) {
+            val r = Color.red(c); val g = Color.green(c); val b = Color.blue(c)
+            if (r > 150 && r - g > 70 && r - b > 70) red++
+            if (g > 100 && g - r > 40 && g - b > 30) grn++
+        }
+        val need = px.size * 0.04
+        return if (s.color == 1) red > need && red > grn * 3 else grn > need && grn > red * 3
     }
 
     override fun onDestroy() {
