@@ -18,14 +18,15 @@ class Step(val name: String, val l: Int, val t: Int, val r: Int, val b: Int,
            val color: Int = 0,            // 0: không xét màu, 1: số phải màu đỏ (-), 2: màu xanh (+)
            val asset: String = name,
            val tx2: Int = -1, val ty2: Int = -1,   // điểm bấm dự phòng (luân phiên với điểm chính)
-           val thr: Float = 0f) { var sig = FloatArray(0); var n = 0 }
+           val thr: Float = 0f,
+           val tx3: Int = -1, val ty3: Int = -1) { var sig = FloatArray(0); var n = 0 }
 
 class CaptureService : Service() {
     // Toạ độ theo khung game 360x640 (game full chiều ngang, căn giữa dọc)
     private val RW = 360f; private val RH = 640f
     private val N = 24; private val THRESH = 0.8f
     private val steps = listOf(
-        Step("event", 238, 539, 308, 552, 315, 94, 1500, 0, "event", 310, 88, 0.6f),  // 今日不再提示 -> bấm X
+        Step("event", 238, 539, 308, 552, 315, 94, 1500, 0, "event", 310, 88, 0.6f, 305, 138),  // 今日不再提示 -> bấm X
         Step("replace", 209, 371, 239, 386, 268, 528, 2000, 2, "yaoli"),  // 妖力 + xanh -> 替换
         Step("decomp", 209, 371, 239, 386, 88, 528, 2000, 1, "yaoli"),    // 妖力 - đỏ  -> 分解
         Step("close", 118, 347, 242, 362, 310, 32, 2000),
@@ -120,9 +121,9 @@ class CaptureService : Service() {
                 .setSmallIcon(android.R.drawable.ic_menu_view).build())
         hit?.let {
             last[it.name] = now
-            val alt = it.tx2 >= 0 && (it.n++ % 2 == 1)
-            val px = if (alt) it.tx2 else it.tx
-            val py = if (alt) it.ty2 else it.ty
+            val idx = if (it.tx2 < 0) 0 else if (it.tx3 < 0) it.n++ % 2 else it.n++ % 3
+            val px = when (idx) { 1 -> it.tx2; 2 -> it.tx3; else -> it.tx }
+            val py = when (idx) { 1 -> it.ty2; 2 -> it.ty3; else -> it.ty }
             ClickService.instance?.tap((px + hitX) * k, oy + (py + hitY) * k)
         }
     }
